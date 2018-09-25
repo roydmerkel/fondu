@@ -31,6 +31,8 @@
 #include <time.h>
 #include <unistd.h>
 
+#include <fondu/unbin.h>
+
 #if __Mac
 # include <CoreServices.h>		/* -I/Developer/Headers/FlatCarbon/ */
 #endif
@@ -69,54 +71,41 @@ static void Usage(char *prog) {
 }
 
 static void ProcessFile(char *filename) {
-    FILE *binfile;
+    FILE *indatafile, *inresourcefile;
     unsigned char header[128];
     char name[80];
     int dlen, rlen;
     int i,ch;
 
-    binfile = fopen(filename,"r");
-    if ( binfile==NULL ) {
-	fprintf( stderr, "Cannot open %s\n", filename);
-return;
+    if(!GetUnbinHandles(filename, &indatafile, &dlen, &inresourcefile, &rlen, &header, &name))
+    {
+	    return;
     }
-    fread(header,1,sizeof(header),binfile);
-    if ( header[0]!=0 || header[74]!=0 || header[82]!=0 || header[1]<=0 ||
-	    header[1]>33 || header[63]!=0 || header[2+header[1]]!=0 ) {
-	fprintf( stderr, "%s does not look like a macbinary file\n", filename );
-	fclose(binfile);
-return;
-    }
-    strncpy(name,(char *) header+2,header[1]);
-    name[header[1]] = '\0';
-    dlen = ((header[0x53]<<24)|(header[0x54]<<16)|(header[0x55]<<8)|header[0x56]);
-    rlen = ((header[0x57]<<24)|(header[0x58]<<16)|(header[0x59]<<8)|header[0x5a]);
+
     fprintf( stderr, " %s => %s, dfork len=%d rfork len=%d\n", filename, name, dlen, rlen );
 #ifndef __Mac
     {
 	FILE *datafile, *resfile, *infofile;
 
 	if ( dlen>0 ) {
-	    fseek(binfile,128,SEEK_SET);
 	    strcpy(name+header[1],".data");
 	    datafile = fopen(name,"w");
 	    if ( datafile==NULL )
 		fprintf( stderr, "Cannot open output file: %s\n", name );
 	    else {
-		for ( i=0; i<dlen && (ch=getc(binfile))!=EOF; ++i )
+		for ( i=0; i<dlen && (ch=getc(indatafile))!=EOF; ++i )
 		    putc(ch,datafile);
 		fclose(datafile);
 	    }
 	}
 
 	if ( rlen>0 ) {
-	    fseek(binfile,128 + ((dlen+127)&~127),SEEK_SET);
 	    strcpy(name+header[1],".rsrc");
 	    resfile = fopen(name,"w");
 	    if ( resfile==NULL )
 		fprintf( stderr, "Cannot open output file: %s\n", name );
 	    else {
-		for ( i=0; i<rlen && (ch=getc(binfile))!=EOF; ++i )
+		for ( i=0; i<rlen && (ch=getc(inresourcefile))!=EOF; ++i )
 		    putc(ch,resfile);
 		fclose(resfile);
 	    }
@@ -146,24 +135,22 @@ return;
 	FSRef ref;
 
 	if ( dlen>0 || rlen>0 ) {
-	    fseek(binfile,128,SEEK_SET);
 	    name[header[1]]='\0';
 	    datafile = fopen(name,"w");
 	    if ( datafile==NULL )
 		fprintf( stderr, "Cannot open output file: %s\n", name );
 	    else {
-		for ( i=0; i<dlen && (ch=getc(binfile))!=EOF; ++i )
+		for ( i=0; i<dlen && (ch=getc(indatafile))!=EOF; ++i )
 		    putc(ch,datafile);
 		fclose(datafile);
 
 		if ( rlen>0 ) {
-		    fseek(binfile,128 + ((dlen+127)&~127),SEEK_SET);
 		    strcpy(name+header[1],"/rsrc");
 		    resfile = fopen(name,"w");
 		    if ( resfile==NULL )
 			fprintf( stderr, "Cannot open output file: %s\n", name );
 		    else {
-			for ( i=0; i<rlen && (ch=getc(binfile))!=EOF; ++i )
+			for ( i=0; i<rlen && (ch=getc(inresourcefile))!=EOF; ++i )
 			    putc(ch,resfile);
 			fclose(resfile);
 		    }
@@ -200,8 +187,7 @@ return;
 	    fprintf(stderr, "Cannot open output file: %s\n", name );
 	else {
 	    /* First the data fork */
-	    fseek(binfile,128,SEEK_SET);
-	    for ( i=0; i<dlen && (ch=getc(binfile))!=EOF; ++i )
+	    for ( i=0; i<dlen && (ch=getc(indatafile))!=EOF; ++i )
 		putc(ch,file);
 	    fclose(file);
 
@@ -213,9 +199,8 @@ return;
 		FSpCreateResFile(&spec,creator,type,smSystemScript);
 		if ( FSpOpenRF(&spec,fsWrPerm,&macfile)==noErr ) {
 		    SetEOF(macfile,0);		/* Truncate it just in case it existed... */
-		    fseek(binfile,128 + ((dlen+127)&~127),SEEK_SET);
 		    buf = malloc(8*1024);
-		    for ( i=0; i<rlen && (len=fread(buf,1,8*1024,binfile))>0 ; i+= len ) {
+		    for ( i=0; i<rlen && (len=fread(buf,1,8*1024,inresourcefile))>0 ; i+= len ) {
 			if ( i+len>rlen )
 			    len = rlen-i;
 			FSWrite(macfile,&len,buf);
@@ -227,7 +212,10 @@ return;
 	}
     }
 #endif
-    fclose(binfile);
+    fclose(indatafile);
+    fclose(inresourcefile);
+    indatafile = NULL;
+    inresourcefile = NULL;
 }
 
 int main( int argc, char **argv) {

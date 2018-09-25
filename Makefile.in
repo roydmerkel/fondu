@@ -3,6 +3,8 @@
 wilprefix = @prefix@
 exec_prefix = @exec_prefix@
 bindir = @bindir@
+includedir = @includedir@
+libdir = @libdir@
 
 CC = @CC@
 srcdir = @srcdir@
@@ -13,20 +15,26 @@ HOST= @HOST@
 DARWIN_CORE = $(if $(findstring apple-darwin,$(HOST)),/System/Library/Frameworks/CoreServices.framework/CoreServices,)
 
 WFLAGS = -Wmissing-prototypes -Wunused -Wimplicit -Wreturn-type -Wparentheses -pedantic
-CFLAGS = -g $(WFLAGS)
+CFLAGS = -g $(WFLAGS) -L . -I . -I include
 FONDUOBJS = fondu.o readnfnt.o fondups.o
+LIBFONDUOBJS = unbin.o
 UFONDOBJS = ufond.o ufondbdf.o ufondpfb.o ufondttf.o crctab.o
 DFONT2RESOBJS = dfont2res.o crctab.o
 SHOWOBJS = showfond.o
 TOBINOBJS = tomacbinary.o crctab.o
 FROMBINOBJS = frommacbinary.o
+FROMBINLIBS = -lfondu
 LUMPEROBJS = lumper.o
 SETFONDNAMEOBJS = setfondname.o
 
-all: fondu ufond showfond dfont2res tobin frombin lumper setfondname
+all: fondu libfondu.a ufond showfond dfont2res tobin frombin lumper setfondname
 
 fondu: $(FONDUOBJS)
 	$(CC) $(CFLAGS) -o fondu $(FONDUOBJS) -lm $(DARWIN_CORE)
+
+
+libfondu.a: $(LIBFONDUOBJS)
+	$(AR) rcs libfondu.a $(LIBFONDUOBJS)
 
 
 ufond: $(UFONDOBJS)
@@ -41,8 +49,8 @@ dfont2res: $(DFONT2RESOBJS)
 tobin: $(TOBINOBJS)
 	$(CC) $(CFLAGS) -o tobin $(TOBINOBJS) $(DARWIN_CORE)
 
-frombin: $(FROMBINOBJS)
-	$(CC) $(CFLAGS) -o frombin $(FROMBINOBJS) $(DARWIN_CORE)
+frombin: $(FROMBINOBJS) libfondu.a
+	$(CC) $(CFLAGS) -o frombin $(FROMBINOBJS) $(FROMBINLIBS) $(DARWIN_CORE)
 
 lumper: $(LUMPEROBJS)
 	$(CC) $(CFLAGS) -o lumper $(LUMPEROBJS)
@@ -51,14 +59,18 @@ setfondname: $(SETFONDNAMEOBJS)
 	$(CC) $(CFLAGS) -o setfondname $(SETFONDNAMEOBJS)
 
 clean:
-	-rm -f *.o fondu ufond showfond dfont2res tobin frombin lumper setfondname
+	-rm -f *.a *.o fondu ufond showfond dfont2res tobin frombin lumper setfondname
 
 distclean: clean
 	-rm Makefile
 
 install: all
 	mkdir -p $(DESTDIR)$(bindir)
+	mkdir -p $(DESTDIR)$(includedir)/fondu
+	mkdir -p $(DESTDIR)$(libdir)
 	cp fondu ufond showfond dfont2res tobin frombin lumper setfondname $(DESTDIR)$(bindir)
+	cp libfondu.a $(DESTDIR)$(libdir)
+	cp include/fondu/unbin.h $(DESTDIR)$(includedir)/fondu
 
 
 VERSION:=$(shell date +"%y%d%m")
